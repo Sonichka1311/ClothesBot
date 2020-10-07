@@ -3,21 +3,18 @@ package states
 import (
 	"bot/pkg/constants"
 	"bot/pkg/db"
-	"github.com/sonichka1311/tgbotapi"
+	tb "gopkg.in/tucnak/telebot.v2"
 	"strings"
 )
 
 type MainState struct{}
 
-func (s MainState) Do(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) string {
+func (s MainState) Do(bot *tb.Bot, db *db.Database, message *tb.Message) string {
 	splitMessage := strings.Split(message.Text, "_")
 	switch splitMessage[0] {
 	case "/upload":
-		go bot.Send(tgbotapi.NewMessage(
-			message.Chat.ID,
-			constants.SendMePhoto,
-		))
-		return PhotoState{}.GetName()
+		go bot.Send(message.Sender, constants.SendMePhoto)
+		return UploadSetPhotoState{}.GetName()
 	case "/wardrobe":
 		Wardrobe(bot, db, message)
 		return MainState{}.GetName()
@@ -25,19 +22,17 @@ func (s MainState) Do(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.M
 		GetThing(bot, db, message)
 		return MainState{}.GetName()
 	case "/look":
-		msg := tgbotapi.NewMessage(message.Chat.ID, constants.WhatTopColor)
-		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(constants.ColorButtons(true)...)
-		go bot.Send(msg)
-		return WhatTopColorState{}.GetName()
+		go bot.Send(message.Sender, constants.WhatColor(strings.ToLower(constants.Top)), constants.ColorButtons(true))
+		return LookSetTopColorState{}.GetName()
 	case "/dirty":
 		if len(splitMessage) > 1 {
-			MakeDirty(bot, db, message)
+			ChangePurity(bot, db, message, false)
 		} else {
 			Dirty(bot, db, message)
 		}
 		return MainState{}.GetName()
 	case "/clean":
-		MakeClean(bot, db, message)
+		ChangePurity(bot, db, message, true)
 		return MainState{}.GetName()
 	case "/show":
 		GetByType(bot, db, message)
@@ -48,8 +43,11 @@ func (s MainState) Do(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.M
 	case "/delete":
 		DeleteThing(bot, db, message, splitMessage[1])
 		return MainState{}.GetName()
+	//case "/all":
+		//tb.NewMediaGroup()
+		//return MainState{}.GetName()
 	default:
-		SmthWrong(bot, message.Chat.ID)
+		SmthWrong(bot, message.Sender)
 		return MainState{}.GetName()
 	}
 }

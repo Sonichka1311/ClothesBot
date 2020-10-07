@@ -2,25 +2,24 @@ package states
 
 import (
 	"bot/pkg/db"
-	"github.com/sonichka1311/tgbotapi"
+	tb "gopkg.in/tucnak/telebot.v2"
 )
 
 type State interface {
-	Do(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) string
+	Do(bot *tb.Bot, db *db.Database, message *tb.Message) string
 	GetName() string
 }
 
 var (
 	States = map[string]State{
-		MainState{}.GetName():            MainState{},
-		TypeState{}.GetName():            TypeState{},
-		SeasonState{}.GetName():          SeasonState{},
-		PhotoState{}.GetName():           PhotoState{},
-		NameState{}.GetName():            NameState{},
-		ColorState{}.GetName():           ColorState{},
-		CategoryState{}.GetName():        CategoryState{},
-		WhatTopColorState{}.GetName():    WhatTopColorState{},
-		WhatBottomColorState{}.GetName(): WhatBottomColorState{},
-		WhatSeasonState{}.GetName():      WhatSeasonState{},
+		MainState{}.GetName():               MainState{},
+		UploadSetTypeState{}.GetName():      UploadSetTypeState{},
+		UploadSetSeasonState{}.GetName():    UploadSetSeasonState{},
+		UploadSetPhotoState{}.GetName():     UploadSetPhotoState{},
+		UploadSetNameState{}.GetName():      UploadSetNameState{},
+		UploadSetColorState{}.GetName():     UploadSetColorState{},
+		LookSetTopColorState{}.GetName():    LookSetTopColorState{},
+		LookSetBottomColorState{}.GetName(): LookSetBottomColorState{},
+		LookSetSeasonState{}.GetName():      LookSetSeasonState{},
 	}
 )

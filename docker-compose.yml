@@ -17,5 +17,12 @@ services:
     networks:
       - all
 
+#  rabbitmq:
+#    image: 'rabbitmq'
+#    ports:
+#      - '5672:5672'
+#    networks:
+#      - all
+
 networks:
   all:
