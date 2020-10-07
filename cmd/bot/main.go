@@ -8,10 +8,10 @@ import (
 
 var (
 	// token from @BotFather
-	BotToken = "myAwesomeBotToken"
+	BotToken = "1385866702:AAFvpsPzErz-jF5APKJGqXcSsvimKXAXbXo"
 
 	// heroku url
-	//WebURL = "https://project-name.herokuapp.com/"
+	//WebURL = "https://clothes-bot.herokuapp.com/"
 )
 
 func main() {

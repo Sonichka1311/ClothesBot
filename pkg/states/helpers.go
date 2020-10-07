@@ -3,7 +3,8 @@ package states
 import (
 	"bot/pkg/constants"
 	"bot/pkg/db"
-	"github.com/sonichka1311/tgbotapi"
+	"fmt"
+	tb "gopkg.in/tucnak/telebot.v2"
 	"log"
 	"math/rand"
 	"strconv"
@@ -11,33 +12,31 @@ import (
 	"time"
 )
 
-func Remind(bot *tgbotapi.BotAPI, id int64) {
-	go bot.Send(tgbotapi.NewMessage(id, constants.Remind))
+func Remind(bot *tb.Bot, sender *tb.User) {
+	go bot.Send(sender, constants.Remind)
 }
 
-func Hello(bot *tgbotapi.BotAPI, id int64) {
-	go bot.Send(tgbotapi.NewMessage(id, constants.Hello))
+func Hello(bot *tb.Bot, sender *tb.User) {
+	go bot.Send(sender, constants.Hello)
 }
 
-func Help(bot *tgbotapi.BotAPI, id int64) {
-	go bot.Send(tgbotapi.NewMessage(id, constants.Help))
+func Help(bot *tb.Bot, sender *tb.User) {
+	go bot.Send(sender, constants.Help)
 }
 
-func SmthWrong(bot *tgbotapi.BotAPI, id int64) {
-	go bot.Send(tgbotapi.NewMessage(id, constants.CommandNotFound))
+func SmthWrong(bot *tb.Bot, sender *tb.User) {
+	go bot.Send(sender, constants.CommandNotFound)
 }
 
-func GetThing(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) {
+func GetThing(bot *tb.Bot, db *db.Database, message *tb.Message) {
 	id, _ := strconv.Atoi(message.Text[7:])
-	thing := db.GetThing(message.From.ID, id)
-	photo := tgbotapi.NewPhotoShare(message.Chat.ID, thing.Photo)
-	photo.ParseMode = constants.ParseMode
-	photo.Caption = constants.ThingText(thing)
-	bot.Send(photo)
+	thing := db.GetThing(message.Sender.ID, id)
+	photo := CreateMediaByThing(thing, constants.ThingText)
+	bot.Send(message.Sender, photo)
 }
 
-func Wardrobe(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) {
-	rows := db.GetAll(message.From.ID)
+func Wardrobe(bot *tb.Bot, db *db.Database, message *tb.Message) {
+	rows := db.GetAll(message.Sender.ID)
 	texts := make([]string, 0)
 	for rows.Next() {
 		var thing constants.Thing
@@ -49,38 +48,28 @@ func Wardrobe(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) 
 	}
 	text := strings.Join(texts, "\n")
 	if len(text) == 0 {
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, constants.EmptyWardrobe))
+		bot.Send(message.Sender, constants.EmptyArray["wardrobe"])
 	}
-	txts := constants.SplitBigMsg(text)
-	for _, txt := range txts {
-		msg := tgbotapi.NewMessage(message.Chat.ID, txt)
-		msg.ParseMode = constants.ParseMode
-		bot.Send(msg)
+	SendBigMsg(bot, message.Sender, text)
+}
+
+func ChangePurity(bot *tb.Bot, db *db.Database, message *tb.Message, toClean bool) {
+	id, _ := strconv.Atoi(message.Text[7:])
+	if toClean {
+		db.MakeClean(message.Sender.ID, id)
+	} else {
+		db.MakeDirty(message.Sender.ID, id)
 	}
+	bot.Send(message.Sender, constants.MarkThingTo(db.GetName(message.Sender.ID, id), toClean)+message.Text[7:])
 }
 
-func MakeDirty(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) {
-	id, _ := strconv.Atoi(message.Text[7:])
-	db.MakeDirty(message.From.ID, id)
-	msg := tgbotapi.NewMessage(message.Chat.ID, constants.MarkThingTo(db.GetName(message.From.ID, id), false)+message.Text[7:])
-	msg.ParseMode = constants.ParseMode
-	bot.Send(msg)
-}
-
-func MakeClean(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) {
-	id, _ := strconv.Atoi(message.Text[7:])
-	db.MakeClean(message.From.ID, id)
-	msg := tgbotapi.NewMessage(message.Chat.ID, constants.MarkThingTo(db.GetName(message.From.ID, id), true)+message.Text[7:])
-	msg.ParseMode = constants.ParseMode
-	bot.Send(msg)
-}
-
-func Dirty(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) {
-	rows := db.GetDirty(message.From.ID)
+func Dirty(bot *tb.Bot, db *db.Database, message *tb.Message) {
+	rows := db.GetDirty(message.Sender.ID)
 	texts := make([]string, 0)
 	for rows.Next() {
 		var thing constants.Thing
 		dbError := rows.Scan(&thing.Id, &thing.Name)
+		thing.Purity = "dirty"
 		if dbError != nil {
 			log.Printf("Error while selecting all wardrobe from database: %s\n", dbError.Error())
 		}
@@ -88,45 +77,34 @@ func Dirty(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) {
 	}
 	text := strings.Join(texts, "\n")
 	if len(text) == 0 {
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "Ура! Грязных вещей нет."))
+		bot.Send(message.Sender, constants.EmptyArray["dirty"])
 	}
-	txts := constants.SplitBigMsg(text)
-	for _, txt := range txts {
-		msg := tgbotapi.NewMessage(message.Chat.ID, txt)
-		msg.ParseMode = constants.ParseMode
-		bot.Send(msg)
-	}
+	SendBigMsg(bot, message.Sender, text)
 }
 
-func GetByType(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message) {
-	rows := db.GetByType(message.From.ID, message.Text[6:])
-	text := ""
+func GetByType(bot *tb.Bot, db *db.Database, message *tb.Message) {
+	rows := db.GetByType(message.Sender.ID, message.Text[6:])
+	texts := make([]string, 0)
 	for rows.Next() {
 		var thing constants.Thing
 		dbError := rows.Scan(&thing.Id, &thing.Name, &thing.Purity, &thing.Photo)
 		if dbError != nil {
 			log.Printf("Error while selecting all wardrobe by type from database: %s\n", dbError.Error())
 		}
-		text += "*" + thing.Name + "* (" + thing.Purity + ")\nПосмотреть: /thing\\_" + strconv.Itoa(thing.Id) + "\n"
-		if thing.Purity == "dirty" {
-			text += "Отметить чистым: /clean\\_" + strconv.Itoa(thing.Id) + "\n\n"
-		} else {
-			text += "Отметить грязным: /dirty\\_" + strconv.Itoa(thing.Id) + "\n\n"
-		}
+		texts = append(texts, constants.ThingsText(&thing))
 	}
+	text := strings.Join(texts, "\n")
 	if len(text) == 0 {
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "В этой категории пока ничего нет. Добавь новую вещь: /upload"))
+		bot.Send(message.Sender, constants.EmptyArray["by_type"])
 	}
-	for len(text) > 4096 {
-		ind := strings.LastIndex(text[:4096], "\n\n")
-		msg := tgbotapi.NewMessage(message.Chat.ID, text[:ind])
-		msg.ParseMode = "Markdown"
-		bot.Send(msg)
-		text = text[ind+2:]
+	SendBigMsg(bot, message.Sender, text)
+}
+
+func SendBigMsg(bot *tb.Bot, sender *tb.User, text string) {
+	texts := constants.SplitBigMsg(text)
+	for _, message := range texts {
+		bot.Send(sender, message)
 	}
-	msg := tgbotapi.NewMessage(message.Chat.ID, text)
-	msg.ParseMode = "Markdown"
-	bot.Send(msg)
 }
 
 func GetByParams(db *db.Database, id int, color string, types string, season string) []*constants.Thing {
@@ -144,90 +122,268 @@ func GetByParams(db *db.Database, id int, color string, types string, season str
 	return ans
 }
 
-func SendSomething(bot *tgbotapi.BotAPI, message *tgbotapi.Message, things []*constants.Thing, change bool, thingType string) {
+func AppendSomething(
+	thing *constants.Thing,
+	texts *[]string,
+	photos *[]tb.InputMedia,
+	buttons *[]*tb.InlineButton,
+) {
+	if thing.Photo == "" {
+		*texts = append(*texts, constants.NoCleanThing[thing.Type])
+		return
+	}
+	photo := CreateMediaByThing(thing, constants.Caption)
+	*texts = append(*texts, photo.Caption)
+	if photo.File.FileID != "" {
+		photo.Caption = strings.Split(photo.Caption, "\n")[0]
+		*photos = append(*photos, photo)
+		*buttons = append(*buttons, constants.ChangeButton(thing.Type))
+	}
+}
+
+func GenerateSomething(things []*constants.Thing, thingType string) *constants.Thing {
 	if len(things) == 0 {
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, constants.NoCleanThing[thingType]))
+		return &constants.Thing{Type: thingType}
+	}
+	return things[rand.Intn(len(things))]
+}
+
+func GetTextIndex(thingType string, numberElements int) int {
+	idx := 0
+	switch thingType {
+	case "bottom":
+		idx = 1
+	case "shoes":
+		idx = 2
+		if numberElements == 3 {
+			idx = 1
+		}
+	case "outer":
+		idx = 2
+		if numberElements == 3 {
+			idx = 1
+		}
+	}
+	return idx
+}
+
+func GetThingIdByCaption(text string) int {
+	stringsInText := strings.Split(text, "\n")
+	if len(stringsInText) > 1 {
+		num, err := strconv.Atoi(strings.Split(stringsInText[1], "_")[1])
+		if err != nil {
+			log.Println("Can't get id by caption: ", err.Error())
+			return -1
+		}
+		return num
+	}
+	return -1
+}
+
+func RebuildLookText(db *db.Database, text string, userId int) []string {
+	texts := strings.Split(text, "\n\n")
+	for idx, text := range texts {
+		stringsInText := strings.Split(text, "\n")
+		if len(stringsInText) > 1 {
+			id := GetThingIdByCaption(text)
+			if id != -1 {
+				texts[idx] = constants.Caption(db.GetThing(userId, id))
+				if len(stringsInText) > 2 {
+					texts[idx] += strings.Join(append(stringsInText[2:]), "\n") + "\n"
+				}
+			}
+		}
+	}
+	return texts
+}
+
+func ReGenerateThing(oldThingId int, thing **constants.Thing, things []*constants.Thing) {
+	for oldThingId == (*thing).Id {
+		log.Println("The same thing occurred.")
+		*thing = things[rand.Intn(len(things))]
+	}
+}
+
+func GetKeyboardWithoutButtonWithIdx(keyboard [][]tb.InlineButton, idx int) *tb.ReplyMarkup {
+	return &tb.ReplyMarkup{
+		InlineKeyboard: append(keyboard[:idx], keyboard[idx+1:]...),
+	}
+}
+
+func GetButtonIndex(textIdx int, texts []string) int {
+	buttonIdx := textIdx
+	for idx := 0; idx < textIdx; idx++ {
+		if len(strings.Split(texts[idx], "\n")) > 3 {
+			buttonIdx--
+		}
+	}
+	return buttonIdx
+}
+
+func ReplaceThingText(texts []string, thing *constants.Thing, textIdx int) string {
+	return strings.Join(
+		append(
+			append(texts[:textIdx], constants.Caption(thing)),
+			texts[textIdx+1:]...,
+		),
+		"\n",
+	)
+}
+
+func SendAlbumAndCaption(
+	bot *tb.Bot,
+	sender *tb.User,
+	texts *[]string,
+	photos *[]tb.InputMedia,
+	buttons *[]*tb.InlineButton,
+	isSeparate bool,
+	haveDifferentType bool,
+) {
+	messages, _ := bot.SendAlbum(sender, *photos)
+	for idx, message := range messages {
+		(*buttons)[idx].Data = strings.Split((*buttons)[idx].Data, " ")[0] + "_" + strconv.Itoa(message.ID)
+	}
+	if haveDifferentType {
+		startIndex := 1
+		if isSeparate {
+			*buttons = append(*buttons, constants.ChangeTypeButton("sep", "comb"))
+			startIndex = 2
+		} else {
+			*buttons = append(*buttons, constants.ChangeTypeButton("comb", "sep"))
+		}
+		for idx := startIndex; idx < len(*texts); idx++ {
+			(*buttons)[len(*buttons)-1].Data += fmt.Sprintf("_%d", GetThingIdByCaption((*texts)[idx]))
+		}
+	}
+
+	keyboard := constants.NewKeyboard(*buttons...)
+	msg, _ := bot.Send(sender, strings.Join(*texts, "\n"), keyboard)
+	go HideButtons(bot, msg)
+}
+
+func ChangeType(bot *tb.Bot, db *db.Database, message *tb.Message, thingType string, thingsIDs []string) {
+	texts := make([]string, 0)
+	photos := make([]tb.InputMedia, 0)
+	buttons := make([]*tb.InlineButton, 0)
+
+	uid := message.Sender.ID
+	season := db.GetSeason(uid)
+	if thingType == "sep" {
+		topColor := db.GetTopColor(uid)
+		bottomColor := db.GetBottomColor(uid)
+		tops := GetByParams(db, uid, topColor, strings.ToLower(constants.Top), season)
+		bottoms := GetByParams(db, uid, bottomColor, strings.ToLower(constants.Bottom), season)
+		AppendSomething(GenerateSomething(tops, strings.ToLower(constants.Top)), &texts, &photos, &buttons)
+		AppendSomething(GenerateSomething(bottoms, strings.ToLower(constants.Bottom)), &texts, &photos, &buttons)
+	} else if thingType == "comb" {
+		combos := GetByParams(db, uid, "any", strings.ToLower(constants.Combo), season)
+		AppendSomething(GenerateSomething(combos, strings.ToLower(constants.Combo)), &texts, &photos, &buttons)
+	}
+
+	for idx, thingID := range thingsIDs {
+		id, _ := strconv.Atoi(thingID)
+		if id != -1 {
+			thing := db.GetThing(uid, id)
+			AppendSomething(thing, &texts, &photos, &buttons)
+		} else {
+			if idx == 0 {
+				texts = append(texts, constants.NoCleanThing[strings.ToLower(constants.Shoes)])
+			} else {
+				texts = append(texts, constants.NoCleanThing[strings.ToLower(constants.Outer)])
+			}
+		}
+	}
+
+	SendAlbumAndCaption(bot, message.Sender, &texts, &photos, &buttons, thingType == "sep", true)
+}
+
+func ChangeSomething(bot *tb.Bot, db *db.Database, message *tb.Message, things []*constants.Thing, thingType string, photoMessageID int) {
+	if len(things) == 0 {
+		bot.Send(message.Sender, constants.NoCleanThing[thingType])
 		return
 	}
 	thing := things[rand.Intn(len(things))]
-	//log.Println(strings.Split(message.Caption, "\n")[0])
-	if change {
-		if len(things) > 1 {
-			//log.Println(strings.Split(message.Caption, "\n")[0][len(thingType):])
-			//log.Println(strings.Split(constants.Caption(thing), "\n")[0][len(thingType) + 2:])
-			for strings.Split(message.Caption, "\n")[0][len(thingType):] == strings.Split(constants.Caption(thing), "\n")[0][len(thingType)+2:] {
-				log.Println("The same thing occurred.")
-				//log.Println(strings.Split(message.Caption, "\n")[0])
-				//log.Println(strings.Split(constants.Caption(thing), "\n")[0])
-				thing = things[rand.Intn(len(things))]
-			}
-		} else {
-			msg := tgbotapi.NewEditMessageCaption(
-				message.Chat.ID,
-				message.MessageID,
-				constants.Caption(thing)+"В твоем гардеробе есть только одна чистая вещь этого типа.",
-			)
-			msg.ParseMode = constants.ParseMode
-			bot.Send(msg)
+	texts := RebuildLookText(db, message.Text, message.Sender.ID)
+	textIdx := GetTextIndex(thingType, len(texts))
+	if len(things) > 1 {
+		ReGenerateThing(GetThingIdByCaption(texts[textIdx]), &thing, things)
+	} else {
+		texts[textIdx] = constants.Caption(thing)+constants.JustOneThing
+		buttonIdx := GetButtonIndex(textIdx, texts)
+		keyboard := GetKeyboardWithoutButtonWithIdx(message.ReplyMarkup.InlineKeyboard, buttonIdx)
+		msg, err := bot.Edit(message, strings.Join(texts, "\n"), keyboard)
+		if err != nil {
+			log.Println("Err edit capt just one thing: ", err.Error())
 			return
 		}
+		go HideButtons(bot, msg)
+		return
 	}
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		constants.ChangeButtons(
-			thing.Type,
-			constants.ChangeFrom[thing.Type],
-			constants.ChangeTo[thing.Type],
-		)...,
+
+	photo := CreateMediaByThing(
+		thing,
+		func (thing *constants.Thing) string {
+			return strings.Split(constants.Caption(thing), "\n")[0]
+		},
 	)
-	photo := tgbotapi.InputMediaPhoto{
-		Media:     thing.Photo,
-		ParseMode: constants.ParseMode,
-		Caption:   constants.Caption(thing),
+	_, err := bot.EditMedia(&tb.Message{ID: photoMessageID, Chat: message.Chat}, photo)
+	if err != nil {
+		log.Println("Err edit media: " + err.Error())
+		return
 	}
-	messageId := message.MessageID
-	if change {
-		msg := tgbotapi.NewEditMessagePhoto(message.Chat.ID, message.MessageID, photo)
-		msg.ReplyMarkup = &keyboard
-		log.Println(msg.Media.Caption)
-		bot.Send(msg)
+
+	keyboard := tb.ReplyMarkup{InlineKeyboard: message.ReplyMarkup.InlineKeyboard}
+
+	msg, err := bot.Edit(
+		message,
+		ReplaceThingText(texts, thing, textIdx),
+		&keyboard,
+	)
+	if err != nil {
+		log.Println("Err edit text: " + err.Error())
+		return
+	}
+
+	go HideButtons(bot, msg)
+}
+
+var ToHide = map[int]int{} //messageID to number of changes
+
+func HideButtons(bot *tb.Bot, message *tb.Message) {
+	if _, ok := ToHide[message.ID]; ok {
+		ToHide[message.ID] += 1
 	} else {
-		msg := tgbotapi.NewPhotoShare(message.Chat.ID, photo.Media)
-		msg.ParseMode = photo.ParseMode
-		msg.Caption = photo.Caption
-		msg.ReplyMarkup = &keyboard
-		log.Println(msg.Caption)
-		m, _ := bot.Send(msg)
-		messageId = m.MessageID
+		ToHide[message.ID] = 1
 	}
-	go func() {
-		time.Sleep(time.Minute * 5)
-		msg := tgbotapi.NewEditMessageCaption(
-			message.Chat.ID,
-			messageId,
-			constants.Caption(thing)+"Время на изменение выбора истекло.",
-		)
-		msg.ParseMode = constants.ParseMode
-		bot.Send(msg)
-	}()
+	time.Sleep(time.Minute * 5)
+	ToHide[message.ID] -= 1
+	if ToHide[message.ID] == 0 {
+		bot.EditCaption(message, message.Caption+constants.TimeIsUp)
+	}
 }
 
-func ChangeThing(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message, types string, change bool) {
-	topColor := db.GetTopColor(message.From.ID)
-	bottomColor := db.GetBottomColor(message.From.ID)
-	colors := map[string]string{
-		"top":    topColor,
-		"bottom": bottomColor,
+func ChangeThing(bot *tb.Bot, db *db.Database, data string, message *tb.Message, types string, change bool) {
+	if change {
+		topColor := db.GetTopColor(message.Sender.ID)
+		bottomColor := db.GetBottomColor(message.Sender.ID)
+		colors := map[string]string{
+			strings.ToLower(constants.Top):    topColor,
+			strings.ToLower(constants.Bottom): bottomColor,
+		}
+		season := db.GetSeason(message.Sender.ID)
+		color := "any"
+		if c, ok := colors[types]; ok {
+			color = c
+		}
+		photoMsgId, _ := strconv.Atoi(strings.Split(data, "_")[1])
+		ChangeSomething(bot, db, message, GetByParams(db, message.Sender.ID, color, types, season), types, photoMsgId)
+	} else {
+		ChangeType(bot, db, message, types, strings.Split(data, "_")[2:])
 	}
-	season := db.GetSeason(message.From.ID)
-	color := "any"
-	if c, ok := colors[types]; ok {
-		color = c
-	}
-	SendSomething(bot, message, GetByParams(db, message.From.ID, color, types, season), change, types)
 }
 
-func GetRandomThing(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message, types string) {
-	rows := db.GetByType(message.From.ID, types)
+func GetRandomThing(bot *tb.Bot, db *db.Database, message *tb.Message, types string) {
+	rows := db.GetByType(message.Sender.ID, types)
 	ans := make([]*constants.Thing, 0)
 	for rows.Next() {
 		var thing constants.Thing
@@ -240,42 +396,52 @@ func GetRandomThing(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Mes
 		}
 	}
 	if len(ans) == 0 {
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "В этой категории пока ничего нет. Добавь новую вещь: /upload"))
+		bot.Send(message.Sender, constants.EmptyArray["random"])
 		return
 	}
-	num := rand.Intn(len(ans))
-	msg := tgbotapi.NewPhotoShare(message.Chat.ID, ans[num].Photo)
-	msg.ParseMode = "Markdown"
-	msg.Caption = "*" + ans[num].Name + "*\n" +
-		"Посмотреть подробнее: /thing\\_" + strconv.Itoa(ans[num].Id) + "\n"
-	log.Println(msg.Caption)
-	bot.Send(msg)
+	thing := ans[rand.Intn(len(ans))]
+	photo := CreateMediaByThing(thing, constants.Caption)
+	bot.Send(message.Sender, photo)
+	log.Println(photo.Caption)
 }
 
-func DeleteThing(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.Message, idStr string) {
+func DeleteThing(bot *tb.Bot, db *db.Database, message *tb.Message, idStr string) {
 	id, _ := strconv.Atoi(idStr)
-	db.DeleteThing(message.From.ID, id)
-	bot.Send(tgbotapi.NewMessage(message.Chat.ID, "Вещь удалена. /help"))
+	go db.DeleteThing(message.Sender.ID, id)
+	bot.Send(message.Sender, constants.Deleted)
 }
 
-func MultiCallback(bot *tgbotapi.BotAPI, db *db.Database, message *tgbotapi.CallbackQuery, do, undo func(id int, recent int, s string)) {
-	constants.MutexMap[message.From.ID].Lock()
-	defer constants.MutexMap[message.From.ID].Unlock()
+func MultiCallback(
+	bot *tb.Bot,
+	db *db.Database,
+	message *tb.Callback,
+	do, undo func(id int, recent int, s string),
+) {
+	constants.MutexMap[message.Sender.ID].Lock()
+	defer constants.MutexMap[message.Sender.ID].Unlock()
 	keyboard := message.Message.ReplyMarkup
-	buttons := make([][]tgbotapi.InlineKeyboardButton, 0)
+	buttons := make([][]tb.InlineButton, 0)
 	for _, button := range keyboard.InlineKeyboard {
-		newButton := []tgbotapi.InlineKeyboardButton{tgbotapi.NewInlineKeyboardButtonData(message.Data, button[0].Text)}
+		newButton := []tb.InlineButton{*constants.NewButton(message.Data, button[0].Text)}
 		text := strings.ToLower(strings.Split(button[0].Text, " ")[0])
 		if strings.HasPrefix(message.Data, button[0].Text) && message.Data != "Done" {
 			buttons = append(buttons, newButton)
-			do(message.From.ID, db.GetRecent(message.From.ID), text)
+			do(message.Sender.ID, db.GetRecent(message.Sender.ID), text)
 		} else if strings.HasPrefix(button[0].Text, message.Data) && message.Data != "Done" {
 			buttons = append(buttons, newButton)
-			undo(message.From.ID, db.GetRecent(message.From.ID), text)
+			undo(message.Sender.ID, db.GetRecent(message.Sender.ID), text)
 		} else if message.Data != "Done" || strings.HasSuffix(button[0].Text, "✅") {
-			buttons = append(buttons, []tgbotapi.InlineKeyboardButton{button[0]})
+			buttons = append(buttons, []tb.InlineButton{button[0]})
 		}
 	}
-	msg := tgbotapi.NewEditMessageReplyMarkup(message.Message.Chat.ID, message.Message.MessageID, tgbotapi.NewInlineKeyboardMarkup(buttons...))
-	bot.Send(msg)
+	newKeyboard := tb.ReplyMarkup{InlineKeyboard: buttons}
+	bot.EditReplyMarkup(message.Message, &newKeyboard)
+}
+
+func CreateMediaByThing(thing *constants.Thing, caption func(*constants.Thing) string) *tb.Photo {
+	return &tb.Photo{
+		File:    tb.File{FileID: thing.Photo},
+		Caption: caption(thing),
+		ParseMode: constants.ParseMode,
+	}
 }
