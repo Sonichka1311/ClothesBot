@@ -8,7 +8,7 @@ import (
 
 var (
 	// token from @BotFather
-	BotToken = "1385866702:AAFvpsPzErz-jF5APKJGqXcSsvimKXAXbXo"
+	BotToken = ""
 
 	// heroku url
 	//WebURL = "https://clothes-bot.herokuapp.com/"
