@@ -2,8 +2,9 @@ package constants
 
 import (
 	"fmt"
-	tb "gopkg.in/tucnak/telebot.v2"
 	"strings"
+
+	tb "gopkg.in/tucnak/telebot.v2"
 )
 
 const (
@@ -225,6 +226,7 @@ var (
 				texts = append(texts, text)
 				break
 			}
+
 			ind := strings.LastIndex(text[:MaxLength], "\n\n")
 			texts = append(texts, text[:ind])
 			text = text[ind+2:]

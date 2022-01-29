@@ -1,23 +1,24 @@
 package basics
 
 import (
-	"bot/pkg/constants"
-	"bot/pkg/db"
-	"bot/pkg/states"
 	"context"
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
-	tb "gopkg.in/tucnak/telebot.v2"
 	"log"
 	"strings"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	tb "gopkg.in/tucnak/telebot.v2"
+
+	"bot/pkg/constants"
+	"bot/pkg/db"
+	"bot/pkg/states"
 )
 
 type Bot struct {
 	BotToken string
-	//WebURL 	string
-	Bot *tb.Bot
-	DB  *db.Database
+	Bot      *tb.Bot
+	DB       *db.Database
 }
 
 func (b *Bot) StartBot(ctx context.Context) error {
@@ -41,17 +42,17 @@ func (b *Bot) StartBot(ctx context.Context) error {
 		}
 
 		settings := tb.Settings{
-			//URL:         "",
-			Token:       b.BotToken,
-			Poller: 	 &tb.LongPoller{Timeout: time.Second},
-			ParseMode:   constants.ParseMode,
+			Token:     b.BotToken,
+			Poller:    &tb.LongPoller{Timeout: time.Second},
+			ParseMode: constants.ParseMode,
 		}
+
 		bot, err := tb.NewBot(settings)
 		if err != nil {
 			log.Fatalf("NewBot failed: %s", err)
 		}
-		b.Bot = bot
 
+		b.Bot = bot
 		b.DB = &db.Database{DB: dbSql}
 
 		bot.Handle(tb.OnCallback, b.HandleCallback)
@@ -64,28 +65,34 @@ func (b *Bot) StartBot(ctx context.Context) error {
 
 func (b *Bot) HandleMessage(message *tb.Message) {
 	log.Println("Got message " + message.Text)
+
 	if message.Text == "/start" {
 		b.DB.AddUser(message.Sender.ID)
 		states.Hello(b.Bot, message.Sender)
 		return
 	}
+
 	if message.Text == "/end" {
 		b.DB.UpdateState(message.Sender.ID, states.MainState{}.GetName())
 		states.Remind(b.Bot, message.Sender)
 		return
 	}
+
 	if message.Text == "/help" {
 		b.DB.UpdateState(message.Sender.ID, states.MainState{}.GetName())
 		states.Help(b.Bot, message.Sender)
 		return
 	}
+
 	state := states.States[b.DB.GetState(message.Sender.ID)]
 	b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, message))
 }
 
 func (b *Bot) HandleCallback(message *tb.Callback) {
 	log.Println("Got message " + message.Data)
+
 	state := states.States[b.DB.GetState(message.Sender.ID)]
+
 	if message.Data == "Done" {
 		states.MultiCallback(b.Bot, b.DB, message, nil, nil)
 		msg := message.Message
@@ -93,11 +100,13 @@ func (b *Bot) HandleCallback(message *tb.Callback) {
 		b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, msg))
 		return
 	}
+
 	switch state {
 	case states.UploadSetSeasonState{}:
 		states.MultiCallback(b.Bot, b.DB, message, b.DB.SetSeason, b.DB.UnsetSeason)
 	case states.MainState{}:
 		splitMessage := strings.Split(message.Data, "_")
+
 		message.Message.Sender = message.Sender
 		if splitMessage[0] == "type" {
 			states.ChangeThing(b.Bot, b.DB, message.Data, message.Message, splitMessage[1], false)
@@ -114,9 +123,9 @@ func (b *Bot) HandleCallback(message *tb.Callback) {
 			state.Do(
 				b.Bot, b.DB,
 				&tb.Message{
-					Text: message.Data,
+					Text:   message.Data,
 					Sender: &tb.User{ID: message.Sender.ID},
-					Chat: &tb.Chat{ID: message.Message.Chat.ID},
+					Chat:   &tb.Chat{ID: message.Message.Chat.ID},
 				},
 			),
 		)

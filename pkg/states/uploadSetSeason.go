@@ -1,10 +1,12 @@
 package states
 
 import (
+	"log"
+
+	tb "gopkg.in/tucnak/telebot.v2"
+
 	"bot/pkg/constants"
 	"bot/pkg/db"
-	tb "gopkg.in/tucnak/telebot.v2"
-	"log"
 )
 
 type UploadSetSeasonState struct{}
@@ -14,6 +16,7 @@ func (s UploadSetSeasonState) Do(bot *tb.Bot, db *db.Database, message *tb.Messa
 	if err != nil {
 		log.Println("Err when send color request: ", err.Error())
 	}
+
 	return UploadSetColorState{}.GetName()
 }
 

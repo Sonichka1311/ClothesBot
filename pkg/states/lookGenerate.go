@@ -1,11 +1,13 @@
 package states
 
 import (
-	"bot/pkg/constants"
-	"bot/pkg/db"
-	tb "gopkg.in/tucnak/telebot.v2"
 	"math/rand"
 	"strings"
+
+	tb "gopkg.in/tucnak/telebot.v2"
+
+	"bot/pkg/constants"
+	"bot/pkg/db"
 )
 
 type LookGenerateState struct{}
@@ -34,11 +36,13 @@ func (s LookGenerateState) Do(bot *tb.Bot, db *db.Database, message *tb.Message)
 	} else if sepOrComb == 1 && len(combos) == 0 {
 		sepOrComb = 0
 	}
+
 	if sepOrComb == 0 {
 		if len(tops) == 0 || len(bottoms) == 0 {
 			bot.Send(message.Sender, constants.NeedSomethingClean)
 			return MainState{}.GetName()
 		}
+
 		AppendSomething(GenerateSomething(tops, strings.ToLower(constants.Top)), &texts, &photos, &buttons)
 		AppendSomething(GenerateSomething(bottoms, strings.ToLower(constants.Bottom)), &texts, &photos, &buttons)
 	} else {
@@ -46,6 +50,7 @@ func (s LookGenerateState) Do(bot *tb.Bot, db *db.Database, message *tb.Message)
 			bot.Send(message.Sender, constants.NeedSomethingClean)
 			return MainState{}.GetName()
 		}
+
 		AppendSomething(GenerateSomething(combos, strings.ToLower(constants.Combo)), &texts, &photos, &buttons)
 	}
 

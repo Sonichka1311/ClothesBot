@@ -15,5 +15,6 @@ func NewKeyboard(buttons ...*tb.InlineButton) *tb.ReplyMarkup {
 	for _, button := range buttons {
 		keyboard = append(keyboard, []tb.InlineButton{*button})
 	}
+
 	return &tb.ReplyMarkup{InlineKeyboard: keyboard}
 }
