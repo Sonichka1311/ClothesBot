@@ -159,9 +159,9 @@ func GetTextIndex(thingType string, numberElements int) int {
 			idx = 1
 		}
 	case "outer":
-		idx = 2
+		idx = 3
 		if numberElements == 3 {
-			idx = 1
+			idx = 2
 		}
 	}
 	return idx
@@ -391,6 +391,7 @@ func GetRandomThing(bot *tb.Bot, db *db.Database, message *tb.Message, types str
 		if dbError != nil {
 			log.Printf("Error while selecting all wardrobe by type from database: %s\n", dbError.Error())
 		}
+		thing.Type = types
 		if thing.Purity == "clean" {
 			ans = append(ans, &thing)
 		}

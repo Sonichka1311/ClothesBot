@@ -88,7 +88,9 @@ func (b *Bot) HandleCallback(message *tb.Callback) {
 	state := states.States[b.DB.GetState(message.Sender.ID)]
 	if message.Data == "Done" {
 		states.MultiCallback(b.Bot, b.DB, message, nil, nil)
-		b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, message.Message))
+		msg := message.Message
+		msg.Sender = message.Sender
+		b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, msg))
 		return
 	}
 	switch state {
