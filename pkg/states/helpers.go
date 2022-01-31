@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/s3"
 	tb "gopkg.in/tucnak/telebot.v2"
 
 	"bot/pkg/constants"
@@ -30,24 +31,19 @@ func SmthWrong(bot *tb.Bot, sender *tb.User) {
 	go bot.Send(sender, constants.CommandNotFound)
 }
 
-func GetThing(bot *tb.Bot, db *db.Database, message *tb.Message) {
+func GetThing(bot *tb.Bot, db *db.Database, s3Client *s3.S3, message *tb.Message) {
 	id, _ := strconv.Atoi(message.Text[7:])
 	thing := db.GetThing(message.Sender.ID, id)
-	photo := CreateMediaByThing(thing, constants.ThingText)
+	photo := CreateMediaByThing(s3Client, thing, constants.ThingText)
 	bot.Send(message.Sender, photo)
 }
 
 func Wardrobe(bot *tb.Bot, db *db.Database, message *tb.Message) {
-	rows := db.GetAll(message.Sender.ID)
+	things := db.GetThingsByUser(message.Sender.ID)
 	texts := make([]string, 0)
 
-	for rows.Next() {
-		var thing constants.Thing
-		dbError := rows.Scan(&thing.Id, &thing.Name, &thing.Purity)
-		if dbError != nil {
-			log.Printf("Error while selecting all wardrobe from database: %s\n", dbError.Error())
-		}
-		texts = append(texts, constants.ThingsText(&thing))
+	for _, thing := range things {
+		texts = append(texts, thing.ListCaption())
 	}
 
 	text := strings.Join(texts, "\n")
@@ -67,22 +63,15 @@ func ChangePurity(bot *tb.Bot, db *db.Database, message *tb.Message, toClean boo
 		db.MakeDirty(message.Sender.ID, id)
 	}
 
-	bot.Send(message.Sender, constants.MarkThingTo(db.GetName(message.Sender.ID, id), toClean)+message.Text[7:])
+	bot.Send(message.Sender, constants.MarkThingTo(db.GetThing(message.Sender.ID, id).Name, toClean)+message.Text[7:])
 }
 
 func Dirty(bot *tb.Bot, db *db.Database, message *tb.Message) {
-	rows := db.GetDirty(message.Sender.ID)
+	things := db.ListDirty(message.Sender.ID)
 	texts := make([]string, 0)
 
-	for rows.Next() {
-		var thing constants.Thing
-		dbError := rows.Scan(&thing.Id, &thing.Name)
-		thing.Purity = "dirty"
-		if dbError != nil {
-			log.Printf("Error while selecting all wardrobe from database: %s\n", dbError.Error())
-		}
-
-		texts = append(texts, constants.ThingsText(&thing))
+	for _, thing := range things {
+		texts = append(texts, thing.ListCaption())
 	}
 
 	text := strings.Join(texts, "\n")
@@ -94,17 +83,11 @@ func Dirty(bot *tb.Bot, db *db.Database, message *tb.Message) {
 }
 
 func GetByType(bot *tb.Bot, db *db.Database, message *tb.Message) {
-	rows := db.GetByType(message.Sender.ID, message.Text[6:])
+	things := db.ListByType(message.Sender.ID, message.Text[6:])
 	texts := make([]string, 0)
 
-	for rows.Next() {
-		var thing constants.Thing
-		dbError := rows.Scan(&thing.Id, &thing.Name, &thing.Purity, &thing.Photo)
-		if dbError != nil {
-			log.Printf("Error while selecting all wardrobe by type from database: %s\n", dbError.Error())
-		}
-
-		texts = append(texts, constants.ThingsText(&thing))
+	for _, thing := range things {
+		texts = append(texts, thing.ListCaption())
 	}
 
 	text := strings.Join(texts, "\n")
@@ -122,25 +105,8 @@ func SendBigMsg(bot *tb.Bot, sender *tb.User, text string) {
 	}
 }
 
-func GetByParams(db *db.Database, id int, color string, types string, season string) []*constants.Thing {
-	ans := make([]*constants.Thing, 0)
-	rows := db.GetByParams(id, color, types, season)
-
-	for rows.Next() {
-		var thing constants.Thing
-		dbError := rows.Scan(&thing.Id, &thing.Name, &thing.Photo)
-		thing.Type = types
-		if dbError != nil {
-			log.Printf("Error while selecting %ss from database: %s\n", types, dbError.Error())
-		}
-
-		ans = append(ans, &thing)
-	}
-
-	return ans
-}
-
 func AppendSomething(
+	s3Client *s3.S3,
 	thing *constants.Thing,
 	texts *[]string,
 	photos *[]tb.InputMedia,
@@ -151,10 +117,10 @@ func AppendSomething(
 		return
 	}
 
-	photo := CreateMediaByThing(thing, constants.Caption)
+	photo := CreateMediaByThing(s3Client, thing, constants.Caption)
 	*texts = append(*texts, photo.Caption)
 
-	if photo.File.FileID != "" {
+	if photo.File.FileID != "" || photo.File.FileReader != nil {
 		photo.Caption = strings.Split(photo.Caption, "\n")[0]
 		*photos = append(*photos, photo)
 		*buttons = append(*buttons, constants.ChangeButton(thing.Type))
@@ -227,7 +193,7 @@ func RebuildLookText(db *db.Database, text string, userId int) []string {
 }
 
 func ReGenerateThing(oldThingId int, thing **constants.Thing, things []*constants.Thing) {
-	for oldThingId == (*thing).Id {
+	for oldThingId == (*thing).ID {
 		log.Println("The same thing occurred.")
 		*thing = things[rand.Intn(len(things))]
 	}
@@ -294,32 +260,40 @@ func SendAlbumAndCaption(
 	go HideButtons(bot, msg)
 }
 
-func ChangeType(bot *tb.Bot, db *db.Database, message *tb.Message, thingType string, thingsIDs []string) {
+func ChangeType(
+	bot *tb.Bot,
+	db *db.Database,
+	s3Client *s3.S3,
+	message *tb.Message,
+	thingType string,
+	thingsIDs []string,
+) {
 	texts := make([]string, 0)
 	photos := make([]tb.InputMedia, 0)
 	buttons := make([]*tb.InlineButton, 0)
 
 	uid := message.Sender.ID
-	season := db.GetSeason(uid)
+	user :=  db.GetUser(uid)
+	season := user.Season
 
 	if thingType == "sep" {
-		topColor := db.GetTopColor(uid)
-		bottomColor := db.GetBottomColor(uid)
-		tops := GetByParams(db, uid, topColor, strings.ToLower(constants.Top), season)
-		bottoms := GetByParams(db, uid, bottomColor, strings.ToLower(constants.Bottom), season)
+		topColor := user.TopColor
+		bottomColor := user.BottomColor
+		tops := db.GetByParams(uid, topColor, strings.ToLower(constants.Top), season)
+		bottoms := db.GetByParams(uid, bottomColor, strings.ToLower(constants.Bottom), season)
 
-		AppendSomething(GenerateSomething(tops, strings.ToLower(constants.Top)), &texts, &photos, &buttons)
-		AppendSomething(GenerateSomething(bottoms, strings.ToLower(constants.Bottom)), &texts, &photos, &buttons)
+		AppendSomething(s3Client, GenerateSomething(tops, strings.ToLower(constants.Top)), &texts, &photos, &buttons)
+		AppendSomething(s3Client, GenerateSomething(bottoms, strings.ToLower(constants.Bottom)), &texts, &photos, &buttons)
 	} else if thingType == "comb" {
-		combos := GetByParams(db, uid, "any", strings.ToLower(constants.Combo), season)
-		AppendSomething(GenerateSomething(combos, strings.ToLower(constants.Combo)), &texts, &photos, &buttons)
+		combos := db.GetByParams(uid, "any", strings.ToLower(constants.Combo), season)
+		AppendSomething(s3Client, GenerateSomething(combos, strings.ToLower(constants.Combo)), &texts, &photos, &buttons)
 	}
 
 	for idx, thingID := range thingsIDs {
 		id, _ := strconv.Atoi(thingID)
 		if id != -1 {
 			thing := db.GetThing(uid, id)
-			AppendSomething(thing, &texts, &photos, &buttons)
+			AppendSomething(s3Client, thing, &texts, &photos, &buttons)
 		} else {
 			if idx == 0 {
 				texts = append(texts, constants.NoCleanThing[strings.ToLower(constants.Shoes)])
@@ -332,7 +306,15 @@ func ChangeType(bot *tb.Bot, db *db.Database, message *tb.Message, thingType str
 	SendAlbumAndCaption(bot, message.Sender, &texts, &photos, &buttons, thingType == "sep", true)
 }
 
-func ChangeSomething(bot *tb.Bot, db *db.Database, message *tb.Message, things []*constants.Thing, thingType string, photoMessageID int) {
+func ChangeSomething(
+	bot *tb.Bot,
+	db *db.Database,
+	s3Client *s3.S3,
+	message *tb.Message,
+	things []*constants.Thing,
+	thingType string,
+	photoMessageID int,
+) {
 	if len(things) == 0 {
 		bot.Send(message.Sender, constants.NoCleanThing[thingType])
 		return
@@ -359,6 +341,7 @@ func ChangeSomething(bot *tb.Bot, db *db.Database, message *tb.Message, things [
 	}
 
 	photo := CreateMediaByThing(
+		s3Client,
 		thing,
 		func (thing *constants.Thing) string {
 			return strings.Split(constants.Caption(thing), "\n")[0]
@@ -392,65 +375,69 @@ func HideButtons(bot *tb.Bot, message *tb.Message) {
 
 	time.Sleep(time.Minute * 5)
 	ToHide[message.ID]--
+
+
 	if ToHide[message.ID] == 0 {
 		bot.EditCaption(message, message.Caption+constants.TimeIsUp)
+		delete(ToHide, message.ID)
+	} else if ToHide[message.ID] < 0 {
 		delete(ToHide, message.ID)
 	}
 }
 
-func ChangeThing(bot *tb.Bot, db *db.Database, data string, message *tb.Message, types string, change bool) {
+func ChangeThing(
+	bot *tb.Bot,
+	db *db.Database,
+	s3Client *s3.S3,
+	data string,
+	message *tb.Message,
+	types string,
+	change bool,
+) {
 	if change {
-		topColor := db.GetTopColor(message.Sender.ID)
-		bottomColor := db.GetBottomColor(message.Sender.ID)
+		user := db.GetUser(message.Sender.ID)
 
 		colors := map[string]string{
-			strings.ToLower(constants.Top):    topColor,
-			strings.ToLower(constants.Bottom): bottomColor,
+			strings.ToLower(constants.Top):    user.TopColor,
+			strings.ToLower(constants.Bottom): user.BottomColor,
 		}
 
-		season := db.GetSeason(message.Sender.ID)
 		color := "any"
 		if c, ok := colors[types]; ok {
 			color = c
 		}
 
 		photoMsgId, _ := strconv.Atoi(strings.Split(data, "_")[1])
-		ChangeSomething(bot, db, message, GetByParams(db, message.Sender.ID, color, types, season), types, photoMsgId)
+		ChangeSomething(bot, db, s3Client, message, db.GetByParams(message.Sender.ID, color, types, user.Season), types, photoMsgId)
 	} else {
-		ChangeType(bot, db, message, types, strings.Split(data, "_")[2:])
+		ChangeType(bot, db, s3Client, message, types, strings.Split(data, "_")[2:])
 	}
 }
 
-func GetRandomThing(bot *tb.Bot, db *db.Database, message *tb.Message, types string) {
-	rows := db.GetByType(message.Sender.ID, types)
+func GetRandomThing(bot *tb.Bot, db *db.Database, s3Client *s3.S3, message *tb.Message, types string) {
+	things := db.ListByType(message.Sender.ID, types)
 	ans := make([]*constants.Thing, 0)
 
-	for rows.Next() {
-		var thing constants.Thing
-		dbError := rows.Scan(&thing.Id, &thing.Name, &thing.Purity, &thing.Photo)
-		if dbError != nil {
-			log.Printf("Error while selecting all wardrobe by type from database: %s\n", dbError.Error())
-		}
-
-		thing.Type = types
+	for _, thing := range things {
 		if thing.Purity == "clean" {
-			ans = append(ans, &thing)
+			ans = append(ans, thing)
 		}
 	}
+
 	if len(ans) == 0 {
 		bot.Send(message.Sender, constants.EmptyArray["random"])
 		return
 	}
 
 	thing := ans[rand.Intn(len(ans))]
-	photo := CreateMediaByThing(thing, constants.Caption)
+	photo := CreateMediaByThing(s3Client, thing, constants.Caption)
 	bot.Send(message.Sender, photo)
 	log.Println(photo.Caption)
 }
 
 func DeleteThing(bot *tb.Bot, db *db.Database, message *tb.Message, idStr string) {
 	id, _ := strconv.Atoi(idStr)
-	go db.DeleteThing(message.Sender.ID, id)
+	db.DeleteThing(message.Sender.ID, id)
 	bot.Send(message.Sender, constants.Deleted)
 }
 
@@ -465,16 +452,18 @@ func MultiCallback(
 	keyboard := message.Message.ReplyMarkup
 	buttons := make([][]tb.InlineButton, 0)
 
+	user := db.GetUser(message.Sender.ID)
+
 	for _, button := range keyboard.InlineKeyboard {
 		newButton := []tb.InlineButton{*constants.NewButton(message.Data, button[0].Text)}
 		text := strings.ToLower(strings.Split(button[0].Text, " ")[0])
 
 		if strings.HasPrefix(message.Data, button[0].Text) && message.Data != "Done" {
 			buttons = append(buttons, newButton)
-			do(message.Sender.ID, db.GetRecent(message.Sender.ID), text)
+			do(message.Sender.ID, user.LastFileID, text)
 		} else if strings.HasPrefix(button[0].Text, message.Data) && message.Data != "Done" {
 			buttons = append(buttons, newButton)
-			undo(message.Sender.ID, db.GetRecent(message.Sender.ID), text)
+			undo(message.Sender.ID, user.LastFileID, text)
 		} else if message.Data != "Done" || strings.HasSuffix(button[0].Text, "✅") {
 			buttons = append(buttons, []tb.InlineButton{button[0]})
 		}
@@ -484,9 +473,19 @@ func MultiCallback(
 	bot.EditReplyMarkup(message.Message, &newKeyboard)
 }
 
-func CreateMediaByThing(thing *constants.Thing, caption func(*constants.Thing) string) *tb.Photo {
+func CreateMediaByThing(s3Client *s3.S3, thing *constants.Thing, caption func(*constants.Thing) string) *tb.Photo {
+	bucket := "<>"
+	res, err := s3Client.GetObject(&s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &thing.Photo,
+	})
+	if err != nil {
+		log.Println(err)
+	}
+
 	return &tb.Photo{
-		File:    tb.File{FileID: thing.Photo},
+		File: tb.File{FileReader: res.Body},
+		//File:    tb.File{FileID: thing.Photo},
 		Caption: caption(thing),
 		ParseMode: constants.ParseMode,
 	}

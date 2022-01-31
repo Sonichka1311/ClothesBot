@@ -124,7 +124,7 @@ var (
 	Caption = func(thing *Thing) string {
 		return fmt.Sprintf(
 			"*%s*: %s\nShow more: /thing\\_%d\n",
-			strings.ToUpper(thing.Type[0:1])+thing.Type[1:], thing.Name, thing.Id,
+			strings.ToUpper(thing.Type[0:1])+thing.Type[1:], thing.Name, thing.ID,
 		)
 	}
 
@@ -158,22 +158,7 @@ var (
 				"Mark thing *%s*: /%s\\_%d\n"+
 				"Delete thing: /delete\\_%d\n",
 			thing.Name, thing.Type, strings.Join(seasons, ", "),
-			thing.Color, thing.Purity, toCond, toCond, thing.Id, thing.Id,
-		)
-	}
-
-	ThingsText = func(thing *Thing) string {
-		var toCond string
-		if thing.Purity == "dirty" {
-			toCond = Clean
-		} else {
-			toCond = Dirty
-		}
-		return fmt.Sprintf(
-			"*%s* (%s)\n"+
-				"See more: /thing\\_%d\n"+
-				"Mark thing *%s*: /%s\\_%d\n",
-			thing.Name, thing.Purity, thing.Id, toCond, toCond, thing.Id,
+			thing.Color, thing.Purity, toCond, toCond, thing.ID, thing.ID,
 		)
 	}
 

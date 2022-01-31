@@ -3,3 +3,12 @@ build:
 
 run: build
 	docker-compose up --build --force-recreate
+
+buildmacos:
+	go build -o bin/bot/bot cmd/bot/main.go
+
+localrun: buildmacos
+	./bin/bot/bot
+
+cloudrun: build
+	./bin/bot/bot

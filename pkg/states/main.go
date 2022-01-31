@@ -1,15 +1,18 @@
 package states
 
 import (
+	"strings"
+
+	"github.com/aws/aws-sdk-go/service/s3"
+	tb "gopkg.in/tucnak/telebot.v2"
+
 	"bot/pkg/constants"
 	"bot/pkg/db"
-	tb "gopkg.in/tucnak/telebot.v2"
-	"strings"
 )
 
 type MainState struct{}
 
-func (s MainState) Do(bot *tb.Bot, db *db.Database, message *tb.Message) string {
+func (s MainState) Do(bot *tb.Bot, db *db.Database, s3 *s3.S3, message *tb.Message) string {
 	splitMessage := strings.Split(message.Text, "_")
 	switch splitMessage[0] {
 	case "/upload":
@@ -19,7 +22,7 @@ func (s MainState) Do(bot *tb.Bot, db *db.Database, message *tb.Message) string 
 		Wardrobe(bot, db, message)
 		return MainState{}.GetName()
 	case "/thing":
-		GetThing(bot, db, message)
+		GetThing(bot, db, s3, message)
 		return MainState{}.GetName()
 	case "/look":
 		go bot.Send(message.Sender, constants.WhatColor(strings.ToLower(constants.Top)), constants.ColorButtons(true))
@@ -38,7 +41,7 @@ func (s MainState) Do(bot *tb.Bot, db *db.Database, message *tb.Message) string 
 		GetByType(bot, db, message)
 		return MainState{}.GetName()
 	case "/get":
-		GetRandomThing(bot, db, message, splitMessage[1])
+		GetRandomThing(bot, db, s3, message, splitMessage[1])
 		return MainState{}.GetName()
 	case "/delete":
 		DeleteThing(bot, db, message, splitMessage[1])

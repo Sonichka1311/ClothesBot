@@ -10,8 +10,8 @@ CREATE TABLE `users` (
     `id` int(11) NOT NULL,
     `state` varchar(200) NOT NULL DEFAULT 'main',
     `recent` int(11) NOT NULL DEFAULT 0,
-    `topcolor` varchar(200),
-    `bottomcolor` varchar(200),
+    `top_color` varchar(200),
+    `bottom_color` varchar(200),
     `season` varchar(200),
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;

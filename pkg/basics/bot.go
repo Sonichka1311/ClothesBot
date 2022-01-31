@@ -7,8 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	tb "gopkg.in/tucnak/telebot.v2"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
 	"bot/pkg/constants"
 	"bot/pkg/db"
@@ -19,6 +25,7 @@ type Bot struct {
 	BotToken string
 	Bot      *tb.Bot
 	DB       *db.Database
+	S3       *s3.S3
 }
 
 func (b *Bot) StartBot(ctx context.Context) error {
@@ -26,7 +33,18 @@ func (b *Bot) StartBot(ctx context.Context) error {
 	case <-ctx.Done():
 		log.Println("Context is done.")
 	default:
-		dbSql, dbError := sql.Open("mysql", "root:guest@tcp(mysql:3306)/clothes?charset=utf8&interpolateParams=true")
+		dbSql, dbError := sql.Open(
+			"postgres",
+			`
+				host=<>
+				port=6432
+				dbname=clothes
+				user=<>
+				password=<>
+				sslmode=verify-full
+				sslrootcert=/Users/<>/.postgresql/root.crt
+			`,
+		)
 		if dbError != nil {
 			log.Fatalf("Cannot open database: %s", dbError.Error())
 		}
@@ -53,7 +71,22 @@ func (b *Bot) StartBot(ctx context.Context) error {
 		}
 
 		b.Bot = bot
-		b.DB = &db.Database{DB: dbSql}
+
+		gormDB, err := gorm.Open(postgres.New(postgres.Config{Conn: dbSql}), &gorm.Config{})
+		if err != nil {
+			log.Println("can't open gorm db", err)
+			return err
+		}
+
+		b.DB = &db.Database{DB: dbSql, Gorm: gormDB}
+
+		s3Endpoint := "https://storage.yandexcloud.net"
+		s3Session, _ := session.NewSession(&aws.Config{
+			Region:   aws.String("us-west-2"),
+			Endpoint: &s3Endpoint,
+		})
+
+		b.S3 = s3.New(s3Session)
 
 		bot.Handle(tb.OnCallback, b.HandleCallback)
 		bot.Handle(tb.OnText, b.HandleMessage)
@@ -67,7 +100,7 @@ func (b *Bot) HandleMessage(message *tb.Message) {
 	log.Println("Got message " + message.Text)
 
 	if message.Text == "/start" {
-		b.DB.AddUser(message.Sender.ID)
+		b.DB.CreateUser(message.Sender.ID)
 		states.Hello(b.Bot, message.Sender)
 		return
 	}
@@ -84,20 +117,20 @@ func (b *Bot) HandleMessage(message *tb.Message) {
 		return
 	}
 
-	state := states.States[b.DB.GetState(message.Sender.ID)]
-	b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, message))
+	state := states.States[b.DB.GetUser(message.Sender.ID).State]
+	b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, b.S3, message))
 }
 
 func (b *Bot) HandleCallback(message *tb.Callback) {
 	log.Println("Got message " + message.Data)
 
-	state := states.States[b.DB.GetState(message.Sender.ID)]
+	state := states.States[b.DB.GetUser(message.Sender.ID).State]
 
 	if message.Data == "Done" {
 		states.MultiCallback(b.Bot, b.DB, message, nil, nil)
 		msg := message.Message
 		msg.Sender = message.Sender
-		b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, msg))
+		b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, b.S3, msg))
 		return
 	}
 
@@ -109,9 +142,9 @@ func (b *Bot) HandleCallback(message *tb.Callback) {
 
 		message.Message.Sender = message.Sender
 		if splitMessage[0] == "type" {
-			states.ChangeThing(b.Bot, b.DB, message.Data, message.Message, splitMessage[1], false)
+			states.ChangeThing(b.Bot, b.DB, b.S3, message.Data, message.Message, splitMessage[1], false)
 		} else {
-			states.ChangeThing(b.Bot, b.DB, message.Data, message.Message, splitMessage[0], true)
+			states.ChangeThing(b.Bot, b.DB, b.S3, message.Data, message.Message, splitMessage[0], true)
 		}
 	default:
 		button := constants.NewButton(message.Data, message.Data)
@@ -121,7 +154,7 @@ func (b *Bot) HandleCallback(message *tb.Callback) {
 		b.DB.UpdateState(
 			message.Sender.ID,
 			state.Do(
-				b.Bot, b.DB,
+				b.Bot, b.DB, b.S3,
 				&tb.Message{
 					Text:   message.Data,
 					Sender: &tb.User{ID: message.Sender.ID},

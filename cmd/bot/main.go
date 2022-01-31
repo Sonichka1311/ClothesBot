@@ -9,10 +9,12 @@ import (
 
 var (
 	// token from @BotFather
-	BotToken = ""
+	BotToken = "<>"
 )
 
 func main() {
+	//BotToken = os.Getenv("bot_token")
+
 	bot := basics.Bot{
 		BotToken: BotToken,
 	}

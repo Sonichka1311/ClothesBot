@@ -1,12 +1,19 @@
 package states
 
 import (
-	"bot/pkg/db"
+	"github.com/aws/aws-sdk-go/service/s3"
 	tb "gopkg.in/tucnak/telebot.v2"
+
+	"bot/pkg/db"
 )
 
 type State interface {
-	Do(bot *tb.Bot, db *db.Database, message *tb.Message) string
+	Do(
+		bot *tb.Bot,
+		db *db.Database,
+		s3 *s3.S3,
+		message *tb.Message,
+	) string
 	GetName() string
 }
 
