@@ -7,23 +7,29 @@ import (
 	"mime/multipart"
 	"net/http"
 
-	"github.com/aws/aws-sdk-go/service/s3"
 	tb "gopkg.in/tucnak/telebot.v2"
 
 	"bot/pkg/constants"
 	"bot/pkg/db"
+	"bot/pkg/s3"
 )
 
-type UploadSetPhotoState struct{}
+type UploadSetPhotoState struct {
+	BaseState
+}
 
-func (s UploadSetPhotoState) Do(bot *tb.Bot, db *db.Database, s3Client *s3.S3, message *tb.Message) string {
-	recent := db.GetUser(message.Sender.ID).LastFileID
+func NewUploadSetPhotoState(bot *tb.Bot, db *db.Database, s3 *s3.S3) State {
+	return &UploadSetPhotoState{BaseState: NewBase(bot, db, s3)}
+}
 
-	db.AddThing(message.Sender.ID, recent)
-	s.uploadToS3(s3Client, message.Photo.FileID, s.removeBackground(s.getRawData(bot, message.Photo)))
-	db.SetPhoto(message.Sender.ID, recent, message.Photo.FileID)
+func (s UploadSetPhotoState) Do(message *tb.Message) string {
+	recent := s.db.GetUser(message.Sender.ID).LastFileID
 
-	bot.Send(message.Sender, constants.SendMeName)
+	s.db.AddThing(message.Sender.ID, recent)
+	go func() { s.uploadToS3(message.Photo.FileID, s.removeBackground(s.getRawData(message.Photo))) }()
+	s.db.SetPhoto(message.Sender.ID, recent, message.Photo.FileID)
+
+	s.bot.Send(message.Sender, constants.SendMeName)
 	return UploadSetNameState{}.GetName()
 }
 
@@ -31,8 +37,8 @@ func (s UploadSetPhotoState) GetName() string {
 	return "uploadSetPhoto"
 }
 
-func (s UploadSetPhotoState) getRawData(bot *tb.Bot, photo *tb.Photo) []byte {
-	file, _ := bot.GetFile(photo.MediaFile())
+func (s UploadSetPhotoState) getRawData(photo *tb.Photo) []byte {
+	file, _ := s.bot.GetFile(photo.MediaFile())
 	defer file.Close()
 
 	data, _ := io.ReadAll(file)
@@ -55,7 +61,7 @@ func (s UploadSetPhotoState) removeBackground(data []byte) []byte {
 		&b,
 	)
 	r.Header.Set("Content-Type", w.FormDataContentType())
-	r.Header.Set("appkey", "<>")
+	r.Header.Set("appkey", "")
 
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
@@ -67,19 +73,8 @@ func (s UploadSetPhotoState) removeBackground(data []byte) []byte {
 	return res
 }
 
-func (s UploadSetPhotoState) uploadToS3(
-	s3Client *s3.S3,
-	key string,
-	data []byte,
-) {
-	bucketName := "<>"
-	body := bytes.NewReader(data)
-
-	_, err := s3Client.PutObject(&s3.PutObjectInput{
-		Bucket: &bucketName,
-		Key:    &key,
-		Body:   body,
-	})
+func (s UploadSetPhotoState) uploadToS3(key string, data []byte) {
+	err := s.s3.PutObject(key, data)
 	if err != nil {
 		log.Println("Error while upload file to S3:", err.Error())
 	}

@@ -5,71 +5,79 @@ import (
 	"strings"
 
 	tb "gopkg.in/tucnak/telebot.v2"
+
+	"bot/pkg/utils"
 )
 
 const (
-	Remind = "Do you need /help?"
-	Hello  = "Hey! I can help you choose your today's outfit! To find out what I can do, click /help"
-	Help   = "That's what I can do:\n" +
-		"• /upload - add new thing\n" +
-		"• /wardrobe - show all things\n" +
-		"• /show\\_top - show all tops\n" +
-		"• /show\\_bottom - show all bottoms\n" +
-		"• /show\\_combo - show all combos and dresses\n" +
-		"• /show\\_outer - show all outerwear\n" +
-		"• /show\\_shoes - show all shoes\n" +
-		"• /look - generate outfit\n" +
-		"• /dirty - show all dirty things\n" +
-		"• /get\\_top - generate one top\n" +
-		"• /get\\_bottom - generate one bottom\n" +
-		"• /get\\_combo - generate one combo or dress\n" +
-		"• /get\\_outer - generate one outerwear\n" +
-		"• /get\\_shoes - generate one shoes\n"
-	CommandNotFound    = "I didn't find that command. Do you need /help?"
-	SendMePhoto        = "Send me photo of new thing. If you want to stop adding new thing, click /end"
-	SendMeName         = "How do you call it?"
-	SendMeType         = "What type is it of? Tap on the right variant:"
-	SendMeSeason       = "What weather is it for? Choose all appropriate variants:"
-	SendMeColor        = "Is it light or dark thing? Tap on the right variant:"
-	WhatSeason         = "What weather is it now? Tap on the right variant: "
-	Cold               = "Cold (under 5°)"
-	Normal             = "Normal (5° - 15°)"
-	Warm               = "Warm (15° - 23°)"
-	Hot                = "Hot (23°+)"
-	Done               = "Done"
-	Top                = "Top"
-	Bottom             = "Bottom"
-	Combo              = "Combo"
-	Outer              = "Outer"
-	Shoes              = "Shoes"
-	Light              = "Light"
-	Dark               = "Dark"
-	Any                = "Any"
-	Sep                = "sep"
-	Comb               = "comb"
-	Dirty              = "dirty"
-	Clean              = "clean"
-	NeedSomethingClean = "You need to have at least once clean top and bottom or combo to generate outfit"
+	Remind = "Нужна помощь? /help"
+	Hello  = "Привет! Я могу помочь тебе выбрать образ на сегодня. Чтобы узнать, что я умею, нажми /help"
+	Help   = "Вот, что я умею:\n" +
+		"• /upload - добавить новую вещь\n" +
+		"• /wardrobe - показать все вещи\n" +
+		"• /show\\_top - показать весь верх\n" +
+		"• /show\\_bottom - показать весь низ\n" +
+		"• /show\\_combo - показать все комбинезоны и платья\n" +
+		"• /show\\_outer - показать всю верхнюю одежду\n" +
+		"• /show\\_shoes - показать всю обувь\n" +
+		"• /look - сгенерировать образ\n" +
+		"• /dirty - показать все грязные вещи\n" +
+		"• /get\\_top - показать случайный верх\n" +
+		"• /get\\_bottom - показать случайный низ\n" +
+		"• /get\\_combo - показать случайный(ое) комбинезон или платье\n" +
+		"• /get\\_outer - показать случайную верхнюю одежду\n" +
+		"• /get\\_shoes - показать случайную обувь\n"
+	CommandNotFound    = "Не нашел такую команду. Нужна помощь? /help"
+	SendMePhoto        = "Пришли мне фотографию новой вещи. Если хочешь прервать добавление вещи, нажми /end"
+	SendMeName         = "Круто! Как называется?"
+	SendMeType         = "А что за вещь? Выбери нужный вариант:"
+	SendMeSeason       = "Для какой она погоды? Выбери все подходящие варианты:"
+	SendMeCombo        = "Эту вещь можно носить отдельно или в комбинации с другими? Выбери все подходящие варианты:"
+	SendMeColor        = "Это тёмная или светлая вещь? Выбери нужный вариант:"
+	WhatSeason         = "Какая сейчас погода? Выбери нужный вариант:"
+	Cold               = "Холодно (ниже 5°)"
+	Normal             = "Нормально (5° - 15°)"
+	Warm               = "Тепло (15° - 23°)"
+	Hot                = "Жарко (23°+)"
+	Done               = "Готово"
+	Top                = "Верх"
+	Bottom             = "Низ"
+	Combo              = "Комбинация"
+	Outer              = "Верхняя одежда"
+	Shoes              = "Обувь"
+	Light              = "Светлое"
+	Dark               = "Тёмное"
+	Any                = "Любое"
+	Sep                = "Раздельный"
+	Comb               = "Совместный"
+	Dirty              = "Грязное"
+	Clean              = "Чистое"
+	NeedSomethingClean = "Чтобы сгенерировать образ, нужен хотя бы один верх+низ или комбо в гардеробе."
 	ParseMode          = "Markdown"
-	EmptyWardrobe      = "Your wardrobe is empty. Add new thing: /upload"
+	EmptyWardrobe      = "Гардероб пока пуст :( Добавь новую вещь: /upload"
 	MaxLength          = 4096
-	Deleted 		   = "Thing was deleted. /help"
-	JustOneThing       = "There are just one clean thing of this type.\n"
-	TimeIsUp           = "The time for change outfit is up.\n"
+	Deleted            = "Вещь была удалена. /help"
+	JustOneThing       = "В гардеробе только одна вещь такого типа.\n"
+	TimeIsUp           = "Время для смены образа истекло.\n"
+	UploadCancelled    = "Загрузка отменена."
 )
 
 var (
 	Added = func(name string, id int) string {
-		return fmt.Sprintf("Thing *\"%s\"* was added to your wardrobe.\n" +
-			"See more: /thing\\_%d\nMark dirty: /dirty\\_%d\nAdd new thing: /upload", name, id, id)
+		return fmt.Sprintf(
+			`Вещь *\"%s\"* добавлена в гардероб.\n
+			Показать полную информацию: /thing\\_%d\n
+			Отметить как грязное: /dirty\\_%d\n
+			Добавить новую вещь: /upload
+		`, name, id, id)
 	}
 
 	NoThing = func(typeThing string) string {
-		return fmt.Sprintf("You don't have appropriate clean %s.", typeThing)
+		return fmt.Sprintf("В гардеробе нет подходящей чистой вещи типа %s.", typeThing)
 	}
 
 	WhatColor = func(typeThing string) string {
-		return fmt.Sprintf("Do you want %s of specific color? Tap on the right variant: ", typeThing)
+		return fmt.Sprintf("Хочешь %s конкретного цвета? Выбери подходящий вариант: ", typeThing)
 	}
 
 	SeasonButtons = func(needEnd bool) *tb.ReplyMarkup {
@@ -114,52 +122,11 @@ var (
 	//}
 
 	ChangeButton = func(this string) *tb.InlineButton {
-		return NewButton("Change " + this, this)
+		return NewButton("Change "+this, this)
 	}
 
 	ChangeTypeButton = func(fromType, toType string) *tb.InlineButton {
 		return NewButton("Change "+fromType+" to "+toType, "type_"+toType)
-	}
-
-	Caption = func(thing *Thing) string {
-		return fmt.Sprintf(
-			"*%s*: %s\nShow more: /thing\\_%d\n",
-			strings.ToUpper(thing.Type[0:1])+thing.Type[1:], thing.Name, thing.ID,
-		)
-	}
-
-	ThingText = func(thing *Thing) string {
-		seasons := make([]string, 0)
-		if thing.Cold {
-			seasons = append(seasons, "cold")
-		}
-		if thing.Normal {
-			seasons = append(seasons, "normal")
-		}
-		if thing.Warm {
-			seasons = append(seasons, "warm")
-		}
-		if thing.Hot {
-			seasons = append(seasons, "hot")
-		}
-		var toCond string
-		if thing.Purity == "dirty" {
-			toCond = Clean
-		} else {
-			toCond = Dirty
-		}
-
-		return fmt.Sprintf(
-			"*%s*\n"+
-				"*Type:* %s\n"+
-				"*Season:* %v\n"+
-				"*Color:* %s\n"+
-				"*Condition:* %s\n"+
-				"Mark thing *%s*: /%s\\_%d\n"+
-				"Delete thing: /delete\\_%d\n",
-			thing.Name, thing.Type, strings.Join(seasons, ", "),
-			thing.Color, thing.Purity, toCond, toCond, thing.ID, thing.ID,
-		)
 	}
 
 	MarkThingTo = func(name string, isClean bool) string {
@@ -169,7 +136,9 @@ var (
 			marked = Clean
 			offered = Dirty
 		}
-		return fmt.Sprintf("Thing *%s* marked as %s. Mark as %s: /%s\\_", name, marked, offered, offered)
+		marked = strings.ToLower(marked)
+		offered = strings.ToLower(offered)
+		return fmt.Sprintf("Вещь *%s* Отмечена как %s. Отметить как %s: /%s\\_", name, marked, offered, utils.ToEng(offered))
 	}
 
 	NoCleanThing = map[string]string{ // type to text
@@ -197,25 +166,10 @@ var (
 		"shoes":  "",
 	}
 
-	EmptyArray = map[string]string { // func name to text
-		"dirty": "Hurray! There are no dirty things.",
-		"by_type": "There are nothing in this category. Add new thing: /upload",
+	EmptyArray = map[string]string{ // func name to text
+		"dirty":    "Ура! Нет грязных вещей.",
+		"by_type":  "Нет ничего в этой категории :( Добавь новую вещь: /upload",
 		"wardrobe": EmptyWardrobe,
-		"random": "В этой категории пока ничего нет. Добавь новую вещь: /upload",
-	}
-
-	SplitBigMsg = func(text string) []string {
-		texts := make([]string, 0)
-		for len(text) > 0 {
-			if len(text) < MaxLength {
-				texts = append(texts, text)
-				break
-			}
-
-			ind := strings.LastIndex(text[:MaxLength], "\n\n")
-			texts = append(texts, text[:ind])
-			text = text[ind+2:]
-		}
-		return texts
+		"random":   "В этой категории пока ничего нет. Добавь новую вещь: /upload",
 	}
 )

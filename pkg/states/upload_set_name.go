@@ -1,18 +1,24 @@
 package states
 
 import (
-	"github.com/aws/aws-sdk-go/service/s3"
 	tb "gopkg.in/tucnak/telebot.v2"
 
 	"bot/pkg/constants"
 	"bot/pkg/db"
+	"bot/pkg/s3"
 )
 
-type UploadSetNameState struct{}
+type UploadSetNameState struct{
+	BaseState
+}
 
-func (s UploadSetNameState) Do(bot *tb.Bot, db *db.Database, s3 *s3.S3, message *tb.Message) string {
-	db.SetName(message.Sender.ID, db.GetUser(message.Sender.ID).LastFileID, message.Text)
-	bot.Send(message.Sender, constants.SendMeType, constants.TypeButtons())
+func NewUploadSetNameState(bot *tb.Bot, db *db.Database, s3 *s3.S3) State {
+	return &UploadSetNameState{BaseState: NewBase(bot, db, s3)}
+}
+
+func (s UploadSetNameState) Do(message *tb.Message) string {
+	s.db.SetName(message.Sender.ID, s.db.GetUser(message.Sender.ID).LastFileID, message.Text)
+	s.bot.Send(message.Sender, constants.SendMeType, constants.TypeButtons())
 	return UploadSetTypeState{}.GetName()
 }
 

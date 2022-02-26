@@ -231,7 +231,7 @@ func (d Database) MakeClean(userID, thingID int) {
 
 func (d Database) GetThingsByUser(userID int) []*constants.Thing {
 	var things []*constants.Thing
-	err := d.Gorm.Where("user_id=?", userID).Find(&things).Error
+	err := d.Gorm.Where("user_id=?", userID).Order("id").Find(&things).Error
 	if err != nil {
 		log.Printf("Error while selecting all wardrobe from database: %s\n", err.Error())
 		return nil
@@ -254,7 +254,7 @@ func (d Database) GetByParams(userID int, color string, types string, season str
 	}
 
 	var things []*constants.Thing
-	err := d.Gorm.Where(strings.Join(conditions, " and "), args...).Find(&things).Error
+	err := d.Gorm.Where(strings.Join(conditions, " and "), args...).Order("id").Find(&things).Error
 	if err != nil {
 		log.Printf("Error while selecting by params from database: %s\n", err.Error())
 		return nil
@@ -265,7 +265,7 @@ func (d Database) GetByParams(userID int, color string, types string, season str
 
 func (d Database) ListDirty(userID int) []*constants.Thing {
 	var things []*constants.Thing
-	err := d.Gorm.Where("user_id=? and purity=?", userID, "dirty").Find(&things).Error
+	err := d.Gorm.Where("user_id=? and purity=?", userID, "dirty").Order("id").Find(&things).Error
 	if err != nil {
 		log.Printf("Error while selecting all dirty wardrobe from database: %s\n", err.Error())
 		return nil
@@ -275,7 +275,7 @@ func (d Database) ListDirty(userID int) []*constants.Thing {
 
 func (d Database) ListByType(userID int, types string) []*constants.Thing {
 	var things []*constants.Thing
-	err := d.Gorm.Where("user_id=? and type=?", userID, types).Find(&things).Error
+	err := d.Gorm.Where("user_id=? and type=?", userID, types).Order("id").Find(&things).Error
 	if err != nil {
 		log.Printf("Error while selecting all dirty wardrobe from database: %s\n", err.Error())
 		return nil

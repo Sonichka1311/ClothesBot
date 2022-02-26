@@ -9,7 +9,7 @@ import (
 
 var (
 	// token from @BotFather
-	BotToken = "<>"
+	BotToken = ""
 )
 
 func main() {

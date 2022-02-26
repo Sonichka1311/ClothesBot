@@ -7,9 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	tb "gopkg.in/tucnak/telebot.v2"
@@ -18,6 +15,7 @@ import (
 
 	"bot/pkg/constants"
 	"bot/pkg/db"
+	"bot/pkg/s3"
 	"bot/pkg/states"
 )
 
@@ -26,6 +24,7 @@ type Bot struct {
 	Bot      *tb.Bot
 	DB       *db.Database
 	S3       *s3.S3
+	States   *states.StateFabric
 }
 
 func (b *Bot) StartBot(ctx context.Context) error {
@@ -36,13 +35,13 @@ func (b *Bot) StartBot(ctx context.Context) error {
 		dbSql, dbError := sql.Open(
 			"postgres",
 			`
-				host=<>
+				host=
 				port=6432
-				dbname=clothes
-				user=<>
-				password=<>
+				dbname=
+				user=
+				password=
 				sslmode=verify-full
-				sslrootcert=/Users/<>/.postgresql/root.crt
+				sslrootcert=
 			`,
 		)
 		if dbError != nil {
@@ -79,14 +78,9 @@ func (b *Bot) StartBot(ctx context.Context) error {
 		}
 
 		b.DB = &db.Database{DB: dbSql, Gorm: gormDB}
+		b.S3 = s3.NewS3()
 
-		s3Endpoint := "https://storage.yandexcloud.net"
-		s3Session, _ := session.NewSession(&aws.Config{
-			Region:   aws.String("us-west-2"),
-			Endpoint: &s3Endpoint,
-		})
-
-		b.S3 = s3.New(s3Session)
+		b.States = states.NewStateFabric(b.Bot, b.DB, b.S3)
 
 		bot.Handle(tb.OnCallback, b.HandleCallback)
 		bot.Handle(tb.OnText, b.HandleMessage)
@@ -99,52 +93,42 @@ func (b *Bot) StartBot(ctx context.Context) error {
 func (b *Bot) HandleMessage(message *tb.Message) {
 	log.Println("Got message " + message.Text)
 
-	if message.Text == "/start" {
-		b.DB.CreateUser(message.Sender.ID)
-		states.Hello(b.Bot, message.Sender)
+	baseState := b.States.NewState("base")
+	nextState := baseState.Do(message)
+	if nextState != baseState.GetName() {
+		b.DB.UpdateState(message.Sender.ID, nextState)
 		return
 	}
 
-	if message.Text == "/end" {
-		b.DB.UpdateState(message.Sender.ID, states.MainState{}.GetName())
-		states.Remind(b.Bot, message.Sender)
-		return
-	}
-
-	if message.Text == "/help" {
-		b.DB.UpdateState(message.Sender.ID, states.MainState{}.GetName())
-		states.Help(b.Bot, message.Sender)
-		return
-	}
-
-	state := states.States[b.DB.GetUser(message.Sender.ID).State]
-	b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, b.S3, message))
+	state := b.States.NewState(b.DB.GetUser(message.Sender.ID).State)
+	b.DB.UpdateState(message.Sender.ID, state.Do(message))
 }
 
 func (b *Bot) HandleCallback(message *tb.Callback) {
 	log.Println("Got message " + message.Data)
 
-	state := states.States[b.DB.GetUser(message.Sender.ID).State]
+	baseState := states.NewBase(b.Bot, b.DB, b.S3)
+	state := b.States.NewState(b.DB.GetUser(message.Sender.ID).State)
 
-	if message.Data == "Done" {
-		states.MultiCallback(b.Bot, b.DB, message, nil, nil)
+	if message.Data == constants.Done {
+		baseState.MultiCallback(message, nil, nil)
 		msg := message.Message
 		msg.Sender = message.Sender
-		b.DB.UpdateState(message.Sender.ID, state.Do(b.Bot, b.DB, b.S3, msg))
+		b.DB.UpdateState(message.Sender.ID, state.Do(msg))
 		return
 	}
 
-	switch state {
-	case states.UploadSetSeasonState{}:
-		states.MultiCallback(b.Bot, b.DB, message, b.DB.SetSeason, b.DB.UnsetSeason)
-	case states.MainState{}:
+	switch state.GetName() {
+	case states.UploadSetSeasonState{}.GetName():
+		baseState.MultiCallback(message, b.DB.SetSeason, b.DB.UnsetSeason)
+	case states.MainState{}.GetName():
 		splitMessage := strings.Split(message.Data, "_")
 
 		message.Message.Sender = message.Sender
 		if splitMessage[0] == "type" {
-			states.ChangeThing(b.Bot, b.DB, b.S3, message.Data, message.Message, splitMessage[1], false)
+			baseState.ChangeThing(message.Data, message.Message, splitMessage[1], false)
 		} else {
-			states.ChangeThing(b.Bot, b.DB, b.S3, message.Data, message.Message, splitMessage[0], true)
+			baseState.ChangeThing(message.Data, message.Message, splitMessage[0], true)
 		}
 	default:
 		button := constants.NewButton(message.Data, message.Data)
@@ -154,7 +138,6 @@ func (b *Bot) HandleCallback(message *tb.Callback) {
 		b.DB.UpdateState(
 			message.Sender.ID,
 			state.Do(
-				b.Bot, b.DB, b.S3,
 				&tb.Message{
 					Text:   message.Data,
 					Sender: &tb.User{ID: message.Sender.ID},

@@ -3,18 +3,24 @@ package states
 import (
 	"strconv"
 
-	"github.com/aws/aws-sdk-go/service/s3"
 	tb "gopkg.in/tucnak/telebot.v2"
 
 	"bot/pkg/constants"
 	"bot/pkg/db"
+	"bot/pkg/s3"
 )
 
-type CreateState struct{}
+type CreateState struct{
+	BaseState
+}
 
-func (s CreateState) Do(bot *tb.Bot, db *db.Database, s3 *s3.S3, message *tb.Message) string {
+func NewCreateState(bot *tb.Bot, db *db.Database, s3 *s3.S3) State {
+	return &CreateState{BaseState: NewBase(bot, db, s3)}
+}
+
+func (s CreateState) Do(message *tb.Message) string {
 	recent, _ := strconv.Atoi(message.Text)
-	bot.Send(message.Sender, constants.Added(db.GetThing(message.Sender.ID, recent).Name, recent))
+	s.bot.Send(message.Sender, constants.Added(s.db.GetThing(message.Sender.ID, recent).Name, recent))
 	return MainState{}.GetName()
 }
 
